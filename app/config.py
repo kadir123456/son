@@ -22,7 +22,7 @@ class Settings:
     
     # 1. Başlangıçtaki Maksimum Riskimiz:
     # Fiyat en başta bu kadar ters giderse, küçük bir zararla pozisyon kapanır.
-    STOP_LOSS_PERCENT: float = 0.004   # %0.4
+    STOP_LOSS_PERCENT: float = 0.005   # %0.4
     
     # 2. "Güvenlik Ağı" Kâr Hedefi:
     # Bu, Trailing Stop çalışmazsa veya çok büyük bir ani yükseliş olursa devreye girecek uzak bir hedeftir.
