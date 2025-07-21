@@ -1,0 +1,8 @@
+fastapi
+uvicorn[standard]
+python-binance
+websockets
+numpy
+pandas
+python-dotenv
+firebase-admin

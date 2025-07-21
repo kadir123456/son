@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BNC Futures Bot</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+</head>
+<body>
+
+    <div id="login-container" class="container">
+        <div class="card login-card">
+            <h1>Bot Kontrol Paneli</h1>
+            <p class="subtitle">Lütfen giriş yapın</p>
+            <div class="form-group">
+                <label for="email">E-posta</label>
+                <input type="email" id="email" placeholder="ornek@mail.com" autocomplete="email">
+            </div>
+            <div class="form-group">
+                <label for="password">Şifre</label>
+                <input type="password" id="password" placeholder="••••••••" autocomplete="current-password">
+            </div>
+            <button id="login-button" class="btn btn-start">Giriş Yap</button>
+            <p id="login-error" class="error-message"></p>
+        </div>
+    </div>
+
+    <div id="app-container" class="container" style="display: none;">
+        <header>
+            <h1>Kontrol Paneli</h1>
+            <button id="logout-button" class="btn btn-logout">Çıkış Yap</button>
+        </header>
+
+        <main>
+            <div class="card controls-card">
+                <h2>Bot Yönetimi</h2>
+                <div class="form-group">
+                    <label for="symbol-input">İşlem Yapılacak Coin</label>
+                    <input type="text" id="symbol-input" placeholder="Örn: BTCUSDT">
+                </div>
+                <div class="button-group">
+                    <button id="start-button" class="btn btn-start">Botu Başlat</button>
+                    <button id="stop-button" class="btn btn-stop" disabled>Botu Durdur</button>
+                </div>
+            </div>
+
+            <div class="card status-card">
+                <h2>Anlık Durum</h2>
+                <div class="status-grid">
+                    <p class="status-label">Mesaj:</p>
+                    <p class="status-value"><span id="status-message">Bot başlatılmadı.</span></p>
+                    <p class="status-label">İzlenen Sembol:</p>
+                    <p class="status-value"><span id="current-symbol">N/A</span></p>
+                    <p class="status-label">Pozisyonda mı?:</p>
+                    <p class="status-value"><span id="position-status">Hayır</span></p>
+                    <p class="status-label">Son Sinyal:</p>
+                    <p class="status-value"><span id="last-signal">N/A</span></p>
+                </div>
+            </div>
+            
+            <div class="card stats-card">
+                <h2>Performans İstatistikleri</h2>
+                <div class="stats-grid">
+                    <p class="stats-label">Toplam İşlem:</p>
+                    <p class="stats-value" id="stats-total-trades">0</p>
+                    <p class="stats-label">Başarılı İşlem:</p>
+                    <p class="stats-value" id="stats-winning-trades">0 (%0.0)</p>
+                    <p class="stats-label">Başarısız İşlem:</p>
+                    <p class="stats-value" id="stats-losing-trades">0 (%0.0)</p>
+                    <p class="stats-label">Toplam Kâr:</p>
+                    <p class="stats-value" id="stats-total-profit">0.00 USDT</p>
+                    <p class="stats-label">Toplam Zarar:</p>
+                    <p class="stats-value" id="stats-total-loss">0.00 USDT</p>
+                    <p class="stats-label">Net Kâr/Zarar:</p>
+                    <p class="stats-value" id="stats-net-pnl">0.00 USDT</p>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="https://www.gstatic.com/firebasejs/8.6.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.6.1/firebase-auth.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.6.1/firebase-database.js"></script>
+    <script src="/static/script.js"></script>
+</body>
+</html>
