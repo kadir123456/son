@@ -32,11 +32,11 @@ class Settings:
     
     # Kâr ne zaman korunmaya başlasın?
     # Kâr %0.3'e ulaştığında "kârı koru" modu devreye girer. Bu, işlemin artık zararla kapanmamasını sağlar.
-    TRAILING_ACTIVATION_PERCENT: float = 0.003
+    TRAILING_ACTIVATION_PERCENT: float = 0.002
     
     # Trend ne kadar geri çekilirse pozisyon kapansın?
     # Sizin gözleminize göre Short'lar %0.8 düşüyor. Biz bunun yarısı kadar bir geri çekilmeye izin verelim.
     # Bu, trendin nefes almasına izin verirken, kârın büyük kısmını masada bırakmayı önler.
-    TRAILING_DISTANCE_PERCENT: float = 0.004 # %0.4
+    TRAILING_DISTANCE_PERCENT: float = 0.003 # %0.4
 
 settings = Settings()
