@@ -5,7 +5,7 @@ class TradingStrategy:
     Saf EMA kesişimine dayalı alım-satım stratejisi.
     Trend filtresi olmadan, her kesişimde sinyal üretir.
     """
-    def __init__(self, short_ema_period: int = 5, long_ema_period: int = 12):
+    def __init__(self, short_ema_period: int = 9, long_ema_period: int = 21):
         self.short_ema_period = short_ema_period
         self.long_ema_period = long_ema_period
         self.last_signal = None 
@@ -43,5 +43,5 @@ class TradingStrategy:
         self.last_signal = signal
         return signal
 
-# Stratejiyi Saf Kesişim için başlatıyoruz
-trading_strategy = TradingStrategy(short_ema_period=5, long_ema_period=12)
+# Stratejiyi sizin Binance grafiğinizdeki (9, 21) ayarlarla başlatıyoruz
+trading_strategy = TradingStrategy(short_ema_period=9, long_ema_period=21)
