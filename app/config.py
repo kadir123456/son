@@ -20,7 +20,7 @@ class Settings:
     
     # --- Kâr/Zarar Ayarları (DÜZENLENDİ) ---
     # Sabit kâr hedefi. Trailing Stop'ın çalışması için uzağa ayarlandı.
-    TAKE_PROFIT_PERCENT: float = 0.05  # %10 (Güvenlik ağı olarak)
+    TAKE_PROFIT_PERCENT: float = 0.005  # %10 (Güvenlik ağı olarak)
     
     # Başlangıçtaki maksimum riskimiz.
     STOP_LOSS_PERCENT: float = 0.003   # %0.3 (Başlangıç Stop Noktası)
