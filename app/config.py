@@ -19,7 +19,7 @@ class Settings:
     TIMEFRAME: str = "5m"
     
     # --- Kâr/Zarar Ayarları (SABİT 5 USDT HEDEFİ) ---
-    TAKE_PROFIT_PERCENT: float = 0.005  # %0.6 Kâr Al (~5 USDT net kâr için)
-    STOP_LOSS_PERCENT: float = 0.004   # %0.4 Zarar Durdur (~5 USDT net zarar için)
+    TAKE_PROFIT_PERCENT: float = 0.003  # %0.6 Kâr Al (~5 USDT net kâr için)
+    STOP_LOSS_PERCENT: float = 0.003   # %0.4 Zarar Durdur (~5 USDT net zarar için)
 
 settings = Settings()
