@@ -15,7 +15,7 @@ class Settings:
 
     # --- İşlem Parametreleri ---
     LEVERAGE: int = 10
-    ORDER_SIZE_USDT: float = 100.0
+    ORDER_SIZE_USDT: float = 140.0
     TIMEFRAME: str = "5m"
     
     # --- Kâr/Zarar Ayarları (SABİT 5 USDT HEDEFİ) ---
