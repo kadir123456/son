@@ -50,20 +50,6 @@ class BinanceClient:
             await self.client.futures_cancel_all_open_orders(symbol=symbol)
             print(f"--> TEMİZLİK: {symbol} için kalan tüm açık emirler iptal edildi.")
         except BinanceAPIException as e: print(f"Hata: Emirler temizlenirken sorun oluştu: {e}")
-    async def close_open_position(self, symbol: str):
-        try:
-            positions = await self.client.futures_position_information(symbol=symbol)
-            for position in positions:
-                if float(position['positionAmt']) != 0:
-                    side = 'SELL' if float(position['positionAmt']) > 0 else 'BUY'
-                    quantity = abs(float(position['positionAmt']))
-                    await self.client.futures_cancel_all_open_orders(symbol=symbol)
-                    await asyncio.sleep(0.1)
-                    response = await self.client.futures_create_order(symbol=symbol, side=side, type='MARKET', quantity=quantity, reduceOnly=True)
-                    print(f"--> POZİSYON KAPATILDI: {response}")
-                    return response
-            return None
-        except BinanceAPIException as e: print(f"Hata: Pozisyon kapatılırken sorun oluştu: {e}"); return None
     async def get_symbol_info(self, symbol: str):
         if not self.exchange_info: return None
         for s in self.exchange_info['symbols']:
