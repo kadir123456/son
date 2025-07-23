@@ -14,12 +14,24 @@ class Settings:
     WEBSOCKET_URL = "wss://fstream.binance.com" if os.getenv("ENVIRONMENT", "TEST") == "LIVE" else "wss://stream.binancefuture.com"
 
     # --- İşlem Parametreleri ---
-    LEVERAGE: int = 10
-    ORDER_SIZE_USDT: float = 100.0
+    LEVERAGE: int = 5
+    ORDER_SIZE_USDT: float = 50.0
     TIMEFRAME: str = "5m"
     
-    # --- Kâr/Zarar Ayarları (SABİT 5 USDT HEDEFİ) ---
-    TAKE_PROFIT_PERCENT: float = 0.005  # %0.6 Kâr Al (~5 USDT net kâr için)
-    STOP_LOSS_PERCENT: float = 0.003   # %0.4 Zarar Durdur (~5 USDT net zarar için)
+    # --- Kâr/Zarar Ayarları ---
+    # Sabit kâr hedefi, trendin çok ileri gitmesi ihtimaline karşı bir güvenlik ağıdır.
+    TAKE_PROFIT_PERCENT: float = 0.10  # %10 (Uzak Hedef)
+    
+    # Başlangıçtaki maksimum riskimiz.
+    STOP_LOSS_PERCENT: float = 0.004   # %0.4
+    
+    # --- YENİ AGRESİF KÂR KORUMA AYARLARI ---
+    
+    # Kâr %0.3'e ulaştığında "kârı koru" modu devreye girer.
+    TRAILING_ACTIVATION_PERCENT: float = 0.003
+    
+    # Fiyat ulaştığı zirveden %0.1 geri çekilirse pozisyonu kârla kapat.
+    # Bu mesafeyi aktivasyondan daha küçük tutmak, net kârı garantiler.
+    TRAILING_DISTANCE_PERCENT: float = 0.001
 
 settings = Settings()
