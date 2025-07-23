@@ -23,6 +23,6 @@ class Settings:
     TAKE_PROFIT_PERCENT: float = 0.004  # %0.18 Kâr Al
     
     # Net ~2.00 USDT zararı hedefler
-    STOP_LOSS_PERCENT: float = 0.0022   # %0.22 Zarar Durdur
+    STOP_LOSS_PERCENT: float = 0.006   # %0.22 Zarar Durdur
 
 settings = Settings()
