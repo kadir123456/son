@@ -61,7 +61,6 @@ class BotCore:
         self.klines.append([data['k'][key] for key in ['t','o','h','l','c','v','T','q','n','V','Q']] + ['0'])
         if len(self.klines) > 50: self.klines.pop(0)
         
-        # Her mumda pozisyonu SL olup olmadığını kontrol et
         open_positions = await binance_client.get_open_positions(self.status["symbol"])
         if self.status["position_side"] is not None and not open_positions:
             print(f"--> Pozisyon SL ile kapandı. Yeni sinyal bekleniyor.")
@@ -69,11 +68,9 @@ class BotCore:
             firebase_manager.log_trade({"symbol": self.status["symbol"], "pnl": pnl, "status": "CLOSED_BY_SL", "timestamp": datetime.now(timezone.utc)})
             self.status["position_side"] = None
 
-        # Yeni sinyali al
         signal = trading_strategy.analyze_klines(self.klines)
         print(f"Strateji analizi sonucu: {signal}")
 
-        # Eğer sinyal varsa ve mevcut pozisyonla aynı değilse, pozisyonu döndür
         if signal != "HOLD" and signal != self.status.get("position_side"):
             await self._flip_position(signal)
 
@@ -84,7 +81,6 @@ class BotCore:
     async def _flip_position(self, new_signal: str):
         symbol = self.status["symbol"]
         
-        # 1. Adım: Mevcut bir pozisyon varsa kapat
         open_positions = await binance_client.get_open_positions(symbol)
         if open_positions:
             position = open_positions[0]
@@ -96,13 +92,12 @@ class BotCore:
             pnl = await binance_client.get_last_trade_pnl(symbol)
             firebase_manager.log_trade({"symbol": symbol, "pnl": pnl, "status": "CLOSED_BY_FLIP", "timestamp": datetime.now(timezone.utc)})
 
-        # 2. Adım: Yeni pozisyonu aç
         print(f"--> Yeni {new_signal} pozisyonu açılıyor...")
         side = "BUY" if new_signal == "LONG" else "SELL"
         price = await binance_client.get_market_price(symbol)
-        if not price: print("Yeni pozisyon için fiyat alınamadı."); return
+        if not price: print("Yeni pozisyon için fiyat alınamadı."); self.status["position_side"] = None; return
         quantity = self._format_quantity((settings.ORDER_SIZE_USDT * settings.LEVERAGE) / price)
-        if quantity <= 0: print("Hesaplanan miktar çok düşük."); return
+        if quantity <= 0: print("Hesaplanan miktar çok düşük."); self.status["position_side"] = None; return
 
         order = await binance_client.create_market_order_with_sl(symbol, side, quantity, price, self.price_precision)
         if order:
