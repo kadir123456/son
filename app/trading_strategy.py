@@ -11,7 +11,7 @@ class TradingStrategy:
     def analyze_klines(self, klines: list) -> str:
         """
         Verilen mum listesini analiz eder.
-        HOLD sinyali üretmez, her zaman LONG veya SHORT döndürür.
+        Neredeyse her zaman LONG veya SHORT döndürür.
         """
         if len(klines) < 1:
             return "HOLD"
