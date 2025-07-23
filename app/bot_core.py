@@ -33,20 +33,23 @@ class BotCore:
         if not await binance_client.set_leverage(symbol, settings.LEVERAGE): self.status["status_message"] = "Kaldıraç ayarlanamadı."; await self.stop(); return
         self.klines = await binance_client.get_historical_klines(symbol, settings.TIMEFRAME, limit=50)
         if not self.klines: self.status["status_message"] = "Geçmiş veri alınamadı."; await self.stop(); return
-        self.status["status_message"] = f"{symbol} ({settings.TIMEFRAME}) için sinyal bekleniyor..."
-        ws_url = f"{settings.WEBSOCKET_URL}/ws/{symbol.lower()}@kline_{settings.TIMEFRAME}"
+        self.status["status_message"] = f"{symbol} ({settings.TIMEFRAME}) için döngü bekleniyor..."
+        await asyncio.gather(self.listen_market_stream(), self.listen_user_stream())
+        await self.stop()
+    async def listen_market_stream(self):
+        ws_url = f"{settings.WEBSOCKET_URL}/ws/{self.status['symbol'].lower()}@kline_{settings.TIMEFRAME}"
         try:
             async with websockets.connect(ws_url, ping_interval=30, ping_timeout=15) as ws:
-                print(f"WebSocket bağlantısı kuruldu: {ws_url}")
+                print(f"Ana döngü ({settings.TIMEFRAME}) dinleniyor: {ws_url}")
                 while not self._stop_requested:
                     try:
                         message = await asyncio.wait_for(ws.recv(), timeout=60.0)
                         await self._handle_websocket_message(message)
                     except (asyncio.TimeoutError, websockets.exceptions.ConnectionClosed):
-                        print("Piyasa veri akışı bağlantı sorunu..."); await asyncio.sleep(5); break
-        except Exception as e: print(f"WebSocket bağlantı hatası: {e}")
-        await self.stop()
-        
+                        print("Ana döngü bağlantı sorunu..."); await asyncio.sleep(5); break
+        except Exception as e: print(f"Ana döngü hatası: {e}")
+    async def listen_user_stream(self):
+        await binance_client.start_user_stream(self._handle_user_message)
     async def stop(self):
         self._stop_requested = True
         if self.status["is_running"]:
@@ -56,29 +59,54 @@ class BotCore:
     async def _handle_websocket_message(self, message: str):
         data = json.loads(message)
         if not data.get('k', {}).get('x', False): return
-            
-        print(f"Yeni mum kapandı: {self.status['symbol']} ({settings.TIMEFRAME}) - Kapanış: {data['k']['c']}")
-        self.klines.append([data['k'][key] for key in ['t','o','h','l','c','v','T','q','n','V','Q']] + ['0'])
-        if len(self.klines) > 50: self.klines.pop(0)
         
-        open_positions = await binance_client.get_open_positions(self.status["symbol"])
-        if self.status["position_side"] is not None and not open_positions:
-            print(f"--> Pozisyon SL ile kapandı. Yeni sinyal bekleniyor.")
-            pnl = await binance_client.get_last_trade_pnl(self.status["symbol"])
-            firebase_manager.log_trade({"symbol": self.status["symbol"], "pnl": pnl, "status": "CLOSED_BY_SL", "timestamp": datetime.now(timezone.utc)})
-            self.status["position_side"] = None
-
-        signal = trading_strategy.analyze_klines(self.klines)
-        print(f"Strateji analizi sonucu: {signal}")
+        kline_data = data['k']
+        open_price_of_new_candle = float(kline_data['c']) # Kapanan mumun kapanış fiyatı, yeni mumun açılış fiyatıdır.
+        
+        print(f"--- {settings.TIMEFRAME} Mum Kapandı: Yeni Analiz Döngüsü Başlıyor ---")
+        
+        print("Strateji gereği 30 saniye bekleniyor...")
+        await asyncio.sleep(30)
+        
+        current_price = await binance_client.get_market_price(self.status["symbol"])
+        if not current_price:
+            print("Uyarı: Anlık fiyat alınamadı, döngü atlanıyor.")
+            return
+            
+        signal = "HOLD"
+        if current_price > open_price_of_new_candle:
+            signal = "LONG"
+        elif current_price < open_price_of_new_candle:
+            signal = "SHORT"
+        
+        print(f"30 saniye sonraki duruma göre yön: {signal} (Açılış: {open_price_of_new_candle}, Anlık: {current_price})")
 
         if signal != "HOLD" and signal != self.status.get("position_side"):
-            await self._flip_position(signal)
+            await self._flip_position(signal, current_price)
+        else:
+            print(f"Yön aynı ({signal}), mevcut pozisyon korunuyor veya beklemeye devam ediliyor.")
+
+    async def _handle_user_message(self, message: dict):
+        if message.get('e') == 'ORDER_TRADE_UPDATE':
+            order_data = message.get('o', {})
+            symbol = order_data.get('s')
+            if symbol == self.status['symbol'] and self.status.get("position_side") is not None:
+                if order_data.get('X') == 'FILLED' and order_data.get('o') in ['TAKE_PROFIT_MARKET', 'STOP_MARKET']:
+                    print(f"--> GERÇEK ZAMANLI TESPİT: {symbol} için {order_data.get('o')} emri doldu!")
+                    await self.close_and_log_position(f"CLOSED_BY_{order_data.get('o')}", float(order_data.get('p')))
+
+    async def close_and_log_position(self, status_text: str, exit_price: float):
+        await binance_client.cancel_all_symbol_orders(self.status["symbol"])
+        pnl = await binance_client.get_last_trade_pnl(self.status["symbol"])
+        trade_log = {"symbol": self.status["symbol"], "side": self.status.get("position_side"), "entry_price": self.status.get("entry_price"), "exit_price": exit_price, "status": status_text, "pnl": pnl, "timestamp": datetime.now(timezone.utc)}
+        firebase_manager.log_trade(trade_log)
+        self.status["position_side"] = None
 
     def _format_quantity(self, quantity: float):
         if self.quantity_precision == 0: return math.floor(quantity)
         factor = 10 ** self.quantity_precision; return math.floor(quantity * factor) / factor
 
-    async def _flip_position(self, new_signal: str):
+    async def _flip_position(self, new_signal: str, entry_price: float):
         symbol = self.status["symbol"]
         
         open_positions = await binance_client.get_open_positions(symbol)
@@ -86,23 +114,21 @@ class BotCore:
             position = open_positions[0]
             position_amt = float(position['positionAmt'])
             side_to_close = 'SELL' if position_amt > 0 else 'BUY'
-            print(f"--> Ters sinyal geldi. Mevcut {self.status['position_side']} pozisyonu kapatılıyor...")
+            print(f"--> Yön Değişikliği: Mevcut {self.status['position_side']} pozisyonu kapatılıyor...")
             await binance_client.close_position(symbol, position_amt, side_to_close)
             await asyncio.sleep(1)
-            pnl = await binance_client.get_last_trade_pnl(symbol)
-            firebase_manager.log_trade({"symbol": symbol, "pnl": pnl, "status": "CLOSED_BY_FLIP", "timestamp": datetime.now(timezone.utc)})
+            await self.close_and_log_position("CLOSED_BY_FLIP", entry_price)
 
         print(f"--> Yeni {new_signal} pozisyonu açılıyor...")
         side = "BUY" if new_signal == "LONG" else "SELL"
-        price = await binance_client.get_market_price(symbol)
-        if not price: print("Yeni pozisyon için fiyat alınamadı."); self.status["position_side"] = None; return
-        quantity = self._format_quantity((settings.ORDER_SIZE_USDT * settings.LEVERAGE) / price)
+        quantity = self._format_quantity((settings.ORDER_SIZE_USDT * settings.LEVERAGE) / entry_price)
         if quantity <= 0: print("Hesaplanan miktar çok düşük."); self.status["position_side"] = None; return
 
-        order = await binance_client.create_market_order_with_sl(symbol, side, quantity, price, self.price_precision)
+        order = await binance_client.create_market_order_with_tp_sl(symbol, side, quantity, entry_price, self.price_precision)
         if order:
             self.status["position_side"] = new_signal
-            self.status["status_message"] = f"Yeni {new_signal} pozisyonu {price} fiyattan açıldı."
+            self.status["entry_price"] = entry_price
+            self.status["status_message"] = f"Yeni {new_signal} pozisyonu {entry_price} fiyattan açıldı."
         else:
             self.status["position_side"] = None
             self.status["status_message"] = "Yeni pozisyon açılamadı."
