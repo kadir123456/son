@@ -36,18 +36,29 @@ class BotCore:
         self.status["status_message"] = f"{symbol} ({settings.TIMEFRAME}) için döngü bekleniyor..."
         await asyncio.gather(self.listen_market_stream(), self.listen_user_stream())
         await self.stop()
+
+    # --- YENİ: OTOMATİK YENİDEN BAĞLANMA DÖNGÜSÜ ---
     async def listen_market_stream(self):
         ws_url = f"{settings.WEBSOCKET_URL}/ws/{self.status['symbol'].lower()}@kline_{settings.TIMEFRAME}"
-        try:
-            async with websockets.connect(ws_url, ping_interval=30, ping_timeout=15) as ws:
-                print(f"Ana döngü ({settings.TIMEFRAME}) dinleniyor: {ws_url}")
-                while not self._stop_requested:
-                    try:
-                        message = await asyncio.wait_for(ws.recv(), timeout=60.0)
-                        await self._handle_websocket_message(message)
-                    except (asyncio.TimeoutError, websockets.exceptions.ConnectionClosed):
-                        print("Ana döngü bağlantı sorunu..."); await asyncio.sleep(5); break
-        except Exception as e: print(f"Ana döngü hatası: {e}")
+        while not self._stop_requested:
+            try:
+                async with websockets.connect(ws_url, ping_interval=20, ping_timeout=20) as ws:
+                    print(f"Ana döngü ({settings.TIMEFRAME}) dinleniyor: {ws_url}")
+                    while not self._stop_requested:
+                        try:
+                            message = await asyncio.wait_for(ws.recv(), timeout=60.0)
+                            await self._handle_websocket_message(message)
+                        except asyncio.TimeoutError:
+                            print("WebSocket 60 saniyedir mesaj göndermiyor, bağlantı kontrol ediliyor...")
+                            # Ping mekanizması bu durumu yönetmeli, ama yine de devam et
+                            continue
+                        except websockets.exceptions.ConnectionClosed:
+                            print("WebSocket bağlantısı kapandı. Yeniden bağlanılacak...")
+                            break # İç döngüden çıkıp yeniden bağlanmayı tetikle
+            except Exception as e:
+                print(f"Ana döngü bağlantı hatası: {e}. 5 saniye sonra yeniden denenecek.")
+                await asyncio.sleep(5)
+
     async def listen_user_stream(self):
         await binance_client.start_user_stream(self._handle_user_message)
     async def stop(self):
@@ -61,7 +72,7 @@ class BotCore:
         if not data.get('k', {}).get('x', False): return
         
         kline_data = data['k']
-        open_price_of_new_candle = float(kline_data['c']) # Kapanan mumun kapanış fiyatı, yeni mumun açılış fiyatıdır.
+        open_price_of_new_candle = float(kline_data['c'])
         
         print(f"--- {settings.TIMEFRAME} Mum Kapandı: Yeni Analiz Döngüsü Başlıyor ---")
         
