@@ -2,39 +2,47 @@ import pandas as pd
 
 class TradingStrategy:
     """
-    Her mum kapanışında, o mumun rengine göre anında işlem açan
-    yüksek frekanslı bir "momentum scalping" stratejisi.
+    Verilen mum verilerine göre mevcut trendin yönünü belirler.
+    Bu strateji, ana bot döngüsü tarafından çağrılır ve sadece yön tespiti yapar.
+    Kural: EMA(9) > EMA(21) ise LONG, değilse SHORT.
     """
-    def __init__(self):
-        print(f"Aktif Strateji: 'Anlık Momentum Takibi'")
+    def __init__(self, short_ema_period: int = 9, long_ema_period: int = 21):
+        self.short_ema_period = short_ema_period
+        self.long_ema_period = long_ema_period
+        print(f"3/5 Hibrit Strateji Yön Belirleyici Başlatıldı: EMA({self.short_ema_period}, {self.long_ema_period})")
 
-    def analyze_klines(self, klines: list) -> str:
+    def get_trend_direction(self, klines: list) -> str:
         """
-        Verilen mum listesini analiz eder.
-        Neredeyse her zaman LONG veya SHORT döndürür.
+        Verilen mum listesine göre o anki trendin yönünü döndürür.
+        Bu fonksiyon bir "kesişim anı" aramaz, sadece son durumu bildirir.
         """
-        if len(klines) < 1:
+        if len(klines) < self.long_ema_period:
+            # Yeterli veri yoksa bir yön belirtme
             return "HOLD"
 
-        # Analiz edeceğimiz mum, en son kapanan mumdur.
-        latest_candle = klines[-1]
+        df = pd.DataFrame(klines, columns=[
+            'open_time', 'open', 'high', 'low', 'close', 'volume', 'close_time',
+            'quote_asset_volume', 'number_of_trades', 'taker_buy_base_asset_volume',
+            'taker_buy_quote_asset_volume', 'ignore'
+        ])
+        df['close'] = pd.to_numeric(df['close'])
 
-        # Mum verilerini Binance API formatına göre alıyoruz:
-        # [zaman, açılış, yüksek, düşük, kapanış, ...]
-        open_price = float(latest_candle[1])
-        close_price = float(latest_candle[4])
+        # Gerekli EMA'ları hesapla
+        df['short_ema'] = df['close'].ewm(span=self.short_ema_period, adjust=False).mean()
+        df['long_ema'] = df['close'].ewm(span=self.long_ema_period, adjust=False).mean()
 
-        signal = "HOLD"
+        # Sadece en son mumdaki duruma bak
+        last_row = df.iloc[-1]
 
-        # En son kapanan mumun rengini kontrol et
-        if close_price > open_price:
-            # Mum YEŞİL ise (yükseliş momentumu), LONG sinyali üret
-            signal = "LONG"
-        elif close_price < open_price:
-            # Mum KIRMIZI ise (düşüş momentumu), SHORT sinyali üret
-            signal = "SHORT"
+        if last_row['short_ema'] > last_row['long_ema']:
+            # Hızlı EMA yavaşın üzerindeyse, yükseliş trendi var demektir.
+            return "LONG"
+        elif last_row['short_ema'] < last_row['long_ema']:
+            # Hızlı EMA yavaşın altındaysa, düşüş trendi var demektir.
+            return "SHORT"
         
-        return signal
+        # EMA'lar eşitse veya bir sorun varsa bekle
+        return "HOLD"
 
 # Strateji nesnesini oluşturalım
-trading_strategy = TradingStrategy()
+trading_strategy = TradingStrategy(short_ema_period=9, long_ema_period=21)
