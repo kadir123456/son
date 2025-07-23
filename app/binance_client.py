@@ -50,22 +50,14 @@ class BinanceClient:
             await self.client.futures_cancel_all_open_orders(symbol=symbol)
             print(f"--> TEMİZLİK: {symbol} için kalan tüm açık emirler iptal edildi.")
         except BinanceAPIException as e: print(f"Hata: Emirler temizlenirken sorun oluştu: {e}")
-    async def close_position(self, symbol: str, position_amt: float, side_to_close: str):
-        try:
-            await self.client.futures_cancel_all_open_orders(symbol=symbol)
-            await asyncio.sleep(0.1)
-            response = await self.client.futures_create_order(symbol=symbol, side=side_to_close, type='MARKET', quantity=abs(position_amt), reduceOnly=True)
-            print(f"--> POZİSYON KAPATILDI: {symbol}")
-            return response
-        except BinanceAPIException as e: print(f"Hata: Pozisyon kapatılırken sorun oluştu: {e}"); return None
     async def get_symbol_info(self, symbol: str):
         if not self.exchange_info: return None
         for s in self.exchange_info['symbols']:
             if s['symbol'] == symbol: return s
         return None
-    async def get_open_positions(self, symbol: str):
+    async def get_open_positions(self):
         try:
-            positions = await self.client.futures_position_information(symbol=symbol)
+            positions = await self.client.futures_position_information()
             return [p for p in positions if float(p['positionAmt']) != 0]
         except BinanceAPIException as e: print(f"Hata: Pozisyon bilgileri alınamadı: {e}"); return []
     async def get_last_trade_pnl(self, symbol: str) -> float:
@@ -74,4 +66,26 @@ class BinanceClient:
             if trades:
                 last_order_id = trades[-1]['orderId']
                 pnl = 0.0
-                for trade in reversed
+                # Hatanın olduğu satır düzeltildi:
+                for trade in reversed(trades):
+                    if trade['orderId'] == last_order_id: pnl += float(trade['realizedPnl'])
+                    else: break
+                return pnl
+            return 0.0
+        except BinanceAPIException as e: print(f"Hata: Son işlem PNL'i alınamadı: {e}"); return 0.0
+    async def close(self):
+        if self.client: await self.client.close_connection(); self.client = None; print("Binance AsyncClient bağlantısı kapatıldı.")
+    async def get_historical_klines(self, symbol: str, interval: str, limit: int = 100):
+        try:
+            print(f"{symbol} için {limit} adet geçmiş mum verisi çekiliyor..."); return await self.client.get_historical_klines(symbol, interval, limit=limit)
+        except BinanceAPIException as e: print(f"Hata: Geçmiş mum verileri çekilemedi: {e}"); return []
+    async def set_leverage(self, symbol: str, leverage: int):
+        try:
+            await self.client.futures_change_leverage(symbol=symbol, leverage=leverage); print(f"Başarılı: {symbol} kaldıracı {leverage}x olarak ayarlandı."); return True
+        except BinanceAPIException as e: print(f"Hata: Kaldıraç ayarlanamadı: {e}"); return False
+    async def get_market_price(self, symbol: str):
+        try:
+            ticker = await self.client.futures_symbol_ticker(symbol=symbol); return float(ticker['price'])
+        except BinanceAPIException as e: print(f"Hata: {symbol} fiyatı alınamadı: {e}"); return None
+
+binance_client = BinanceClient()
