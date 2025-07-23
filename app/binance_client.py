@@ -50,23 +50,35 @@ class BinanceClient:
             await self.client.futures_cancel_all_open_orders(symbol=symbol)
             print(f"--> TEMİZLİK: {symbol} için kalan tüm açık emirler iptal edildi.")
         except BinanceAPIException as e: print(f"Hata: Emirler temizlenirken sorun oluştu: {e}")
+    async def close_position(self, symbol: str, position_amt: float, side_to_close: str):
+        try:
+            await self.client.futures_cancel_all_open_orders(symbol=symbol)
+            await asyncio.sleep(0.1)
+            response = await self.client.futures_create_order(symbol=symbol, side=side_to_close, type='MARKET', quantity=abs(position_amt), reduceOnly=True)
+            print(f"--> POZİSYON KAPATILDI: {symbol}")
+            return response
+        except BinanceAPIException as e: print(f"Hata: Pozisyon kapatılırken sorun oluştu: {e}"); return None
     async def get_symbol_info(self, symbol: str):
         if not self.exchange_info: return None
         for s in self.exchange_info['symbols']:
             if s['symbol'] == symbol: return s
         return None
-    async def get_open_positions(self):
+    
+    # --- DEĞİŞİKLİK BURADA YAPILDI ---
+    async def get_open_positions(self, symbol: str):
+        """Belirtilen sembol için açık pozisyonları döndürür."""
         try:
-            positions = await self.client.futures_position_information()
+            positions = await self.client.futures_position_information(symbol=symbol)
             return [p for p in positions if float(p['positionAmt']) != 0]
-        except BinanceAPIException as e: print(f"Hata: Pozisyon bilgileri alınamadı: {e}"); return []
+        except BinanceAPIException as e: 
+            print(f"Hata: Pozisyon bilgileri alınamadı: {e}"); return []
+            
     async def get_last_trade_pnl(self, symbol: str) -> float:
         try:
             trades = await self.client.futures_account_trades(symbol=symbol, limit=5)
             if trades:
                 last_order_id = trades[-1]['orderId']
                 pnl = 0.0
-                # Hatanın olduğu satır düzeltildi:
                 for trade in reversed(trades):
                     if trade['orderId'] == last_order_id: pnl += float(trade['realizedPnl'])
                     else: break
