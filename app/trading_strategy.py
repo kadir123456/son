@@ -2,22 +2,17 @@ import pandas as pd
 
 class TradingStrategy:
     """
-    Verilen mum verilerine göre mevcut trendin yönünü belirler.
-    Bu strateji, ana bot döngüsü tarafından çağrılır ve sadece yön tespiti yapar.
-    Kural: EMA(9) > EMA(21) ise LONG, değilse SHORT.
+    EMA kesişimini, daha yavaş bir EMA ile trend filtresi olarak birleştiren strateji.
     """
-    def __init__(self, short_ema_period: int = 9, long_ema_period: int = 21):
+    def __init__(self, short_ema_period: int = 9, long_ema_period: int = 21, trend_filter_period: int = 50):
         self.short_ema_period = short_ema_period
         self.long_ema_period = long_ema_period
-        print(f"3/5 Hibrit Strateji Yön Belirleyici Başlatıldı: EMA({self.short_ema_period}, {self.long_ema_period})")
+        self.trend_filter_period = trend_filter_period
+        self.last_signal = None 
+        print(f"Trend Filtreli Strateji başlatıldı: Kesişim EMA({self.short_ema_period}, {self.long_ema_period}) + Filtre EMA({self.trend_filter_period})")
 
-    def get_trend_direction(self, klines: list) -> str:
-        """
-        Verilen mum listesine göre o anki trendin yönünü döndürür.
-        Bu fonksiyon bir "kesişim anı" aramaz, sadece son durumu bildirir.
-        """
-        if len(klines) < self.long_ema_period:
-            # Yeterli veri yoksa bir yön belirtme
+    def analyze_klines(self, klines: list) -> str:
+        if len(klines) < self.trend_filter_period:
             return "HOLD"
 
         df = pd.DataFrame(klines, columns=[
@@ -27,22 +22,30 @@ class TradingStrategy:
         ])
         df['close'] = pd.to_numeric(df['close'])
 
-        # Gerekli EMA'ları hesapla
         df['short_ema'] = df['close'].ewm(span=self.short_ema_period, adjust=False).mean()
         df['long_ema'] = df['close'].ewm(span=self.long_ema_period, adjust=False).mean()
+        df['trend_ema'] = df['close'].ewm(span=self.trend_filter_period, adjust=False).mean()
 
-        # Sadece en son mumdaki duruma bak
         last_row = df.iloc[-1]
+        prev_row = df.iloc[-2]
+        signal = "HOLD"
 
-        if last_row['short_ema'] > last_row['long_ema']:
-            # Hızlı EMA yavaşın üzerindeyse, yükseliş trendi var demektir.
-            return "LONG"
-        elif last_row['short_ema'] < last_row['long_ema']:
-            # Hızlı EMA yavaşın altındaysa, düşüş trendi var demektir.
-            return "SHORT"
+        is_crossover_up = prev_row['short_ema'] < prev_row['long_ema'] and last_row['short_ema'] > last_row['long_ema']
+        is_uptrend = last_row['close'] > last_row['trend_ema']
         
-        # EMA'lar eşitse veya bir sorun varsa bekle
-        return "HOLD"
+        if is_crossover_up and is_uptrend:
+            signal = "LONG"
 
-# Strateji nesnesini oluşturalım
-trading_strategy = TradingStrategy(short_ema_period=9, long_ema_period=21)
+        is_crossover_down = prev_row['short_ema'] > prev_row['long_ema'] and last_row['short_ema'] < last_row['long_ema']
+        is_downtrend = last_row['close'] < last_row['trend_ema']
+
+        if is_crossover_down and is_downtrend:
+            signal = "SHORT"
+            
+        if signal != "HOLD" and signal == self.last_signal:
+            return "HOLD"
+        
+        self.last_signal = signal
+        return signal
+
+trading_strategy = TradingStrategy(short_ema_period=9, long_ema_period=21, trend_filter_period=50)
