@@ -15,14 +15,11 @@ class Settings:
 
     # --- İşlem Parametreleri ---
     LEVERAGE: int = 5
-    ORDER_SIZE_USDT: float = 125.0
-    TIMEFRAME: str = "5m"  # Ana işlem döngüsü
+    ORDER_SIZE_USDT: float = 100.0
+    TIMEFRAME: str = "5m"
     
-    # --- Kâr/Zarar Ayarları (Sizin hedeflerinize göre hesaplandı) ---
-    # Net ~0.50 USDT kâr hedefler
-    TAKE_PROFIT_PERCENT: float = 0.002 # %0.18 Kâr Al
-    
-    # Net ~2.00 USDT zararı hedefler
-    STOP_LOSS_PERCENT: float = 0.009   # %0.22 Zarar Durdur
+    # --- Kâr/Zarar Ayarları (Net ~0.50 USDT Hedefi İçin) ---
+    TAKE_PROFIT_PERCENT: float = 0.002  # %0.2 Kâr Al
+    STOP_LOSS_PERCENT: float = 0.002   # %0.2 Zarar Durdur
 
 settings = Settings()
