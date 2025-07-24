@@ -1,126 +1,80 @@
 import asyncio
-import json
-import websockets
-from .config import settings
-from .binance_client import binance_client
-from .trading_strategy import trading_strategy
-from .firebase_manager import firebase_manager
-from datetime import datetime, timezone
-import math
+import time
+from threading import Thread
+from .binance_client import BinanceClient
+from .trading_strategy import TradingStrategy
+from .firebase_manager import FirebaseManager
+from . import config
 
-class BotCore:
-    def __init__(self):
-        self.status = {"is_running": False, "symbol": None, "in_position": False, "status_message": "Bot başlatılmadı.", "last_signal": "N/A", "entry_price": 0.0, "position_side": None}
-        self.klines, self._stop_requested, self.quantity_precision, self.price_precision = [], False, 0, 0
-    def _get_precision_from_filter(self, symbol_info, filter_type, key):
-        for f in symbol_info['filters']:
-            if f['filterType'] == filter_type:
-                size_str = f[key]
-                if '.' in size_str: return len(size_str.split('.')[1].rstrip('0'))
-                return 0
-        return 0
-    async def start(self, symbol: str):
-        if self.status["is_running"]: print("Bot zaten çalışıyor."); return
-        self._stop_requested = False
-        self.status.update({"is_running": True, "symbol": symbol, "in_position": False, "status_message": f"{symbol} için başlatılıyor..."})
-        print(self.status["status_message"])
-        await binance_client.initialize()
-        symbol_info = await binance_client.get_symbol_info(symbol)
-        if not symbol_info: self.status["status_message"] = f"{symbol} için borsa bilgileri alınamadı."; await self.stop(); return
-        self.quantity_precision = self._get_precision_from_filter(symbol_info, 'LOT_SIZE', 'stepSize')
-        self.price_precision = self._get_precision_from_filter(symbol_info, 'PRICE_FILTER', 'tickSize')
-        print(f"{symbol} için Miktar Hassasiyeti: {self.quantity_precision}, Fiyat Hassasiyeti: {self.price_precision}")
-        if not await binance_client.set_leverage(symbol, settings.LEVERAGE): self.status["status_message"] = "Kaldıraç ayarlanamadı."; await self.stop(); return
-        self.klines = await binance_client.get_historical_klines(symbol, settings.TIMEFRAME, limit=50)
-        if not self.klines: self.status["status_message"] = "Geçmiş veri alınamadı."; await self.stop(); return
-        self.status["status_message"] = f"{symbol} ({settings.TIMEFRAME}) için sinyal bekleniyor..."
-        # İki görevi (piyasa dinleme ve emir dinleme) aynı anda çalıştır
-        await asyncio.gather(
-            self.listen_market_stream(),
-            self.listen_user_stream()
-        )
-        await self.stop()
-
-    async def listen_market_stream(self):
-        ws_url = f"{settings.WEBSOCKET_URL}/ws/{self.status['symbol'].lower()}@kline_{settings.TIMEFRAME}"
-        while not self._stop_requested:
-            try:
-                async with websockets.connect(ws_url, ping_interval=20, ping_timeout=20) as ws:
-                    print(f"Piyasa veri akışı kuruldu: {ws_url}")
-                    while not self._stop_requested:
-                        try:
-                            message = await asyncio.wait_for(ws.recv(), timeout=60.0)
-                            await self._handle_market_message(message)
-                        except (asyncio.TimeoutError, websockets.exceptions.ConnectionClosed):
-                            print("Piyasa veri akışı bağlantı sorunu, yeniden bağlanılıyor..."); break
-            except Exception as e:
-                print(f"Ana döngü bağlantı hatası: {e}. 5 saniye sonra yeniden denenecek."); await asyncio.sleep(5)
-    
-    async def listen_user_stream(self):
-        await binance_client.start_user_stream(self._handle_user_message)
-
-    async def stop(self):
-        self._stop_requested = True
-        if self.status["is_running"]:
-            self.status.update({"is_running": False, "status_message": "Bot durduruldu."})
-            print(self.status["status_message"]); await binance_client.close()
-
-    async def _handle_market_message(self, message: str):
-        data = json.loads(message)
-        if data.get('k', {}).get('x', False):
-            print(f"Yeni mum kapandı: {self.status['symbol']} ({settings.TIMEFRAME}) - Kapanış: {data['k']['c']}")
-            self.klines.pop(0); self.klines.append([data['k'][key] for key in ['t','o','h','l','c','v','T','q','n','V','Q']] + ['0'])
-            
-            if self.status["in_position"]:
-                # --- DEĞİŞİKLİK BURADA YAPILDI ---
-                # Fonksiyona artık doğru şekilde 'symbol' gönderiliyor.
-                open_positions = await binance_client.get_open_positions(self.status["symbol"])
-                if not any(p['symbol'] == self.status['symbol'] for p in open_positions):
-                    print(f"--> Pozisyon kapandığı periyodik kontrol ile tespit edildi. Durum sıfırlanıyor.")
-                    self.status.update({"in_position": False, "status_message": f"{self.status['symbol']} için sinyal bekleniyor..."})
-                else:
-                    print("--> Pozisyon açık, yeni sinyal aranmıyor. Emir durumu bekleniyor.")
-            
-            if not self.status["in_position"]:
-                signal = trading_strategy.analyze_klines(self.klines)
-                self.status["last_signal"] = signal; print(f"Strateji analizi sonucu: {signal}")
-                if signal in ["LONG", "SHORT"]: 
-                    await self._execute_trade(signal)
-
-    async def _handle_user_message(self, message: dict):
-        if message.get('e') == 'ORDER_TRADE_UPDATE':
-            order_data = message.get('o', {})
-            symbol = order_data.get('s')
-            order_status = order_data.get('X')
-            order_type = order_data.get('o')
-            if symbol == self.status['symbol'] and self.status["in_position"]:
-                if order_status == 'FILLED' and order_type in ['TAKE_PROFIT_MARKET', 'STOP_MARKET']:
-                    print(f"--> GERÇEK ZAMANLI TESPİT: {symbol} için {order_type} emri doldu! Yetim emirler temizleniyor.")
-                    await binance_client.cancel_all_symbol_orders(symbol)
-                    closed_pnl = float(order_data.get('rp', 0.0))
-                    trade_log = {"symbol": symbol, "side": self.status.get("position_side"), "entry_price": self.status.get("entry_price"), "exit_price": float(order_data.get('p')), "status": f"CLOSED_BY_{order_type}", "pnl": closed_pnl, "timestamp": datetime.now(timezone.utc)}
-                    firebase_manager.log_trade(trade_log)
-                    self.status.update({"in_position": False, "status_message": f"{self.status['symbol']} için sinyal bekleniyor..."})
-    
-    def _format_quantity(self, quantity: float):
-        if self.quantity_precision == 0: return math.floor(quantity)
-        factor = 10 ** self.quantity_precision; return math.floor(quantity * factor) / factor
+class BotCore(Thread):
+    def __init__(self, user_id, api_key, api_secret, symbol):
+        super().__init__()
+        self.user_id = user_id
+        self.symbol = symbol
+        self.is_running = True
         
-    async def _execute_trade(self, signal: str):
-        symbol = self.status["symbol"]; side = "BUY" if signal == "LONG" else "SELL"
-        await binance_client.cancel_all_symbol_orders(symbol)
-        await asyncio.sleep(0.2)
-        self.status["status_message"] = f"{signal} sinyali alındı..."; print(self.status["status_message"])
-        price = await binance_client.get_market_price(symbol)
-        if not price: self.status["status_message"] = "İşlem için fiyat alınamadı."; return
-        quantity = self._format_quantity((settings.ORDER_SIZE_USDT * settings.LEVERAGE) / price)
-        print(f"Hesaplanan Miktar: {quantity} {symbol.replace('USDT','')}")
-        if quantity <= 0: print("Hesaplanan miktar çok düşük, emir gönderilemiyor."); return
-        order = await binance_client.create_market_order_with_tp_sl(symbol, side, quantity, price, self.price_precision)
-        if order:
-            self.status.update({"in_position": True, "status_message": f"{signal} pozisyonu {price} fiyattan açıldı.", "entry_price": price, "position_side": signal})
-        else:
-            self.status.update({"status_message": "Emir gönderilemedi.", "in_position": False})
-        print(self.status["status_message"])
+        self.client = BinanceClient(api_key, api_secret)
+        self.strategy = TradingStrategy()
+        self.db = FirebaseManager()
 
-bot_core = BotCore()
+    def run(self):
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(self.main_loop())
+
+    async def main_loop(self):
+        print(f"BOT BAŞLATILDI: Kullanıcı={self.user_id}, Parite={self.symbol}")
+        
+        while self.is_running:
+            try:
+                # 1. Bir sonraki mumun başlangıcını bekle
+                self.wait_for_next_candle()
+                if not self.is_running: break
+
+                # 2. Hacim analizi için WebSocket'i başlat
+                await self.client.connect_aggtrade_ws(self.symbol)
+                await asyncio.sleep(config.ANALYSIS_DURATION_SECONDS)
+                
+                # 3. Veriyi topla ve WebSocket'i kapat
+                trades = self.client.get_and_clear_aggtrade_data()
+                await self.client.close_ws()
+
+                # 4. Hacimleri hesapla
+                buyer_volume = sum(trade['q'] for trade in trades if not trade['m'])
+                seller_volume = sum(trade['q'] for trade in trades if trade['m'])
+                
+                # 5. Stratejiden sinyal al
+                current_price = await self.client.get_current_price(self.symbol)
+                ema_filter = await self.client.get_ema(self.symbol, config.TREND_FILTER_TIMEFRAME, config.TREND_FILTER_EMA_PERIOD)
+                signal = self.strategy.get_signal(buyer_volume, seller_volume, current_price, ema_filter)
+
+                # 6. Sinyal varsa işlem yap
+                if signal:
+                    await self.execute_trade(signal, current_price)
+
+            except Exception as e:
+                print(f"HATA: Bot ana döngüsünde hata (Kullanıcı: {self.user_id}): {e}")
+                self.db.log_error(self.user_id, str(e))
+                await asyncio.sleep(60)
+
+        await self.client.close_connection()
+        print(f"BOT DURDURULDU: Kullanıcı={self.user_id}")
+
+    async def execute_trade(self, side, entry_price):
+        try:
+            quantity = (config.POSITION_SIZE_USDT * config.LEVERAGE) / entry_price
+            order = await self.client.create_market_order(self.symbol, side, quantity)
+            print(f"İŞLEM BAŞARILI: {side.upper()} @ {entry_price}")
+            self.db.save_trade(self.user_id, order)
+            # Not: TP/SL emirleri de burada client üzerinden gönderilmeli.
+        except Exception as e:
+            print(f"İŞLEM HATASI (Kullanıcı: {self.user_id}): {e}")
+
+    def wait_for_next_candle(self):
+        current_time = time.time()
+        wait_time = config.TIMEFRAME_SECONDS - (current_time % config.TIMEFRAME_SECONDS)
+        print(f"Bir sonraki mum için {wait_time:.2f} saniye bekleniyor...")
+        time.sleep(wait_time)
+
+    def stop(self):
+        self.is_running = False
