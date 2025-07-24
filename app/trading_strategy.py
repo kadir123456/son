@@ -2,50 +2,45 @@ import pandas as pd
 
 class TradingStrategy:
     """
-    EMA kesişimini, daha yavaş bir EMA ile trend filtresi olarak birleştiren strateji.
+    Bir önceki mumun alıcı ve satıcı hacmine göre sinyal üreten strateji.
     """
-    def __init__(self, short_ema_period: int = 9, long_ema_period: int = 21, trend_filter_period: int = 50):
-        self.short_ema_period = short_ema_period
-        self.long_ema_period = long_ema_period
-        self.trend_filter_period = trend_filter_period
-        self.last_signal = None 
-        print(f"Trend Filtreli Strateji başlatıldı: Kesişim EMA({self.short_ema_period}, {self.long_ema_period}) + Filtre EMA({self.trend_filter_period})")
+    def __init__(self):
+        print(f"Aktif Strateji: 'Hacim Analizi'")
 
     def analyze_klines(self, klines: list) -> str:
-        if len(klines) < self.trend_filter_period:
+        """
+        Verilen mum listesini analiz eder ve hacim baskınlığına göre sinyal üretir.
+        """
+        if len(klines) < 1:
             return "HOLD"
 
-        df = pd.DataFrame(klines, columns=[
-            'open_time', 'open', 'high', 'low', 'close', 'volume', 'close_time',
-            'quote_asset_volume', 'number_of_trades', 'taker_buy_base_asset_volume',
-            'taker_buy_quote_asset_volume', 'ignore'
-        ])
-        df['close'] = pd.to_numeric(df['close'])
+        # Analiz edeceğimiz mum, en son kapanan mumdur.
+        latest_candle = klines[-1]
 
-        df['short_ema'] = df['close'].ewm(span=self.short_ema_period, adjust=False).mean()
-        df['long_ema'] = df['close'].ewm(span=self.long_ema_period, adjust=False).mean()
-        df['trend_ema'] = df['close'].ewm(span=self.trend_filter_period, adjust=False).mean()
+        # Mum verilerini Binance API formatına göre alıyoruz:
+        # [..., 'volume', ..., 'taker_buy_base_asset_volume', ...]
+        #   5. index -> Toplam Hacim
+        #   9. index -> Alıcıların Başlattığı İşlem Hacmi (Taker Buy Volume)
+        
+        total_volume = float(latest_candle[5])
+        taker_buy_volume = float(latest_candle[9])
 
-        last_row = df.iloc[-1]
-        prev_row = df.iloc[-2]
+        # Eğer toplam hacim sıfırsa bir şey yapma
+        if total_volume == 0:
+            return "HOLD"
+            
+        taker_sell_volume = total_volume - taker_buy_volume
+        
         signal = "HOLD"
 
-        is_crossover_up = prev_row['short_ema'] < prev_row['long_ema'] and last_row['short_ema'] > last_row['long_ema']
-        is_uptrend = last_row['close'] > last_row['trend_ema']
-        
-        if is_crossover_up and is_uptrend:
+        # Hacim baskınlığını kontrol et
+        if taker_buy_volume > taker_sell_volume:
+            # Alıcılar baskınsa LONG sinyali üret
             signal = "LONG"
-
-        is_crossover_down = prev_row['short_ema'] > prev_row['long_ema'] and last_row['short_ema'] < last_row['long_ema']
-        is_downtrend = last_row['close'] < last_row['trend_ema']
-
-        if is_crossover_down and is_downtrend:
+        elif taker_sell_volume > taker_buy_volume:
+            # Satıcılar baskınsa SHORT sinyali üret
             signal = "SHORT"
-            
-        if signal != "HOLD" and signal == self.last_signal:
-            return "HOLD"
         
-        self.last_signal = signal
         return signal
 
-trading_strategy = TradingStrategy(short_ema_period=9, long_ema_period=21, trend_filter_period=50)
+trading_strategy = TradingStrategy()
