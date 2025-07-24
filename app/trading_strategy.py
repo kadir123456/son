@@ -1,44 +1,35 @@
-import pandas as pd
+from . import config
 
 class TradingStrategy:
-    """
-    Bir önceki mumun alıcı ve satıcı hacmine göre sinyal üreten strateji.
-    """
     def __init__(self):
-        print(f"Aktif Strateji: 'Hacim Analizi'")
+        # Stratejiye özel değişkenler burada tutulabilir
+        pass
 
-    def analyze_klines(self, klines: list) -> str:
+    def get_signal(self, buyer_volume, seller_volume, current_price, ema_filter_price):
         """
-        Verilen mum listesini analiz eder ve hacim baskınlığına göre sinyal üretir.
+        Verilen hacim ve trend verilerine göre alım/satım sinyali üretir.
+        
+        Returns:
+            'long', 'short', veya None
         """
-        if len(klines) < 1:
-            return "HOLD"
-
-        # Analiz edeceğimiz mum, en son kapanan mumdur.
-        latest_candle = klines[-1]
-
-        # Mum verilerini Binance API formatına göre alıyoruz:
-        # 5. index -> Toplam Hacim
-        # 9. index -> Alıcıların Başlattığı İşlem Hacmi (Taker Buy Volume)
         
-        total_volume = float(latest_candle[5])
-        taker_buy_volume = float(latest_candle[9])
+        # Trend Filtresi kontrolü
+        if config.USE_TREND_FILTER:
+            is_uptrend = current_price > ema_filter_price
+            is_downtrend = current_price < ema_filter_price
+        else:
+            # Filtre kullanılmıyorsa, her sinyal geçerlidir.
+            is_uptrend = True
+            is_downtrend = True
 
-        if total_volume == 0:
-            return "HOLD"
-            
-        taker_sell_volume = total_volume - taker_buy_volume
-        
-        signal = "HOLD"
-
-        # Hacim baskınlığını kontrol et
-        if taker_buy_volume > taker_sell_volume:
-            # Alıcılar baskınsa LONG sinyali üret
-            signal = "LONG"
-        elif taker_sell_volume > taker_buy_volume:
-            # Satıcılar baskınsa SHORT sinyali üret
-            signal = "SHORT"
-        
-        return signal
-
-trading_strategy = TradingStrategy()
+        # Karar verme mantığı
+        if buyer_volume > seller_volume and is_uptrend:
+            print(f"STRATEJİ SİNYALİ: LONG - Alıcı hacmi baskın ve trend uygun.")
+            return 'long'
+        elif seller_volume > buyer_volume and is_downtrend:
+            print(f"STRATEJİ SİNYALİ: SHORT - Satıcı hacmi baskın ve trend uygun.")
+            return 'short'
+        else:
+            # Diğer tüm durumlarda işlem açma
+            print("STRATEJİ SİNYALİ YOK: Koşullar sağlanmadı.")
+            return None
