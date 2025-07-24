@@ -34,10 +34,7 @@ class BotCore:
         self.klines = await binance_client.get_historical_klines(symbol, settings.TIMEFRAME, limit=50)
         if not self.klines: self.status["status_message"] = "Geçmiş veri alınamadı."; await self.stop(); return
         self.status["status_message"] = f"{symbol} ({settings.TIMEFRAME}) için sinyal bekleniyor..."
-        await asyncio.gather(
-            self.listen_market_stream(),
-            self.listen_user_stream()
-        )
+        await asyncio.gather(self.listen_market_stream(), self.listen_user_stream())
         await self.stop()
 
     async def listen_market_stream(self):
@@ -48,7 +45,7 @@ class BotCore:
                 while not self._stop_requested:
                     try:
                         message = await asyncio.wait_for(ws.recv(), timeout=60.0)
-                        await self._handle_websocket_message(message)
+                        await self._handle_market_message(message)
                     except (asyncio.TimeoutError, websockets.exceptions.ConnectionClosed):
                         print("Piyasa veri akışı bağlantı sorunu, yeniden deneniyor..."); await asyncio.sleep(5); break
         except Exception as e: print(f"Piyasa veri akışı hatası: {e}")
@@ -68,17 +65,14 @@ class BotCore:
             print(f"Yeni mum kapandı: {self.status['symbol']} ({settings.TIMEFRAME}) - Kapanış: {data['k']['c']}")
             self.klines.pop(0); self.klines.append([data['k'][key] for key in ['t','o','h','l','c','v','T','q','n','V','Q']] + ['0'])
             
-            # --- YENİ KURAL BURADA ---
-            # Eğer pozisyonda değilsek yeni sinyal ara
+            # ANA KURAL: Sadece pozisyonda değilsek yeni sinyal ara
             if not self.status["in_position"]:
                 signal = trading_strategy.analyze_klines(self.klines)
                 self.status["last_signal"] = signal; print(f"Strateji analizi sonucu: {signal}")
                 if signal in ["LONG", "SHORT"]: 
                     await self._execute_trade(signal)
             else:
-                # Pozisyondaysak, hiçbir şey yapma, sadece bekle.
-                # Gerçek zamanlı takip (user stream) pozisyonun kapandığını bize bildirecek.
-                print("--> Pozisyon açık, yeni sinyal aranmıyor. TP/SL veya emir güncellemesi bekleniyor.")
+                print("--> Pozisyon açık, yeni sinyal aranmıyor. TP/SL bekleniyor.")
 
     async def _handle_user_message(self, message: dict):
         if message.get('e') == 'ORDER_TRADE_UPDATE':
